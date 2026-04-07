@@ -5,14 +5,23 @@ Public testnet faucet for Dytallix.
 It funds a D-Addr with testnet `DGT` and `DRT` so developers can move from
 first keypair to first transaction without waiting on manual allocation.
 
+This repository currently documents the live public faucet service surface.
+It does not publish the deployed backend source for `dytallix.com/api/faucet`.
+
+## Repository Scope
+
+This is a docs-only service-surface repository. It exists to describe the live
+public faucet behavior and request flow, not to publish the deployed backend
+source.
+
 ## Live Service
 
 - Canonical base URL: `https://dytallix.com/api/faucet`
 - Status endpoint: `https://dytallix.com/api/faucet/status`
 - Verified against the live service on April 5, 2026
 
-There is no separate public `faucet.dytallix.com` host. The supported public
-endpoint lives under `dytallix.com/api/faucet`.
+The supported public faucet endpoint lives under `dytallix.com/api/faucet` on
+the main site.
 
 ## Current Testnet Limits
 
@@ -31,18 +40,11 @@ These values come from `GET /status` and may change as the network evolves.
 
 If you need a fresh D-Addr first:
 
-```bash
-cargo add dytallix-sdk
-```
+Add the SDK from Git because the crate is not currently published on crates.io:
 
-```rust
-use dytallix_sdk::{DAddr, DytallixKeypair};
-
-fn main() {
-    let keypair = DytallixKeypair::generate();
-    let addr = DAddr::from_public_key(keypair.public_key()).unwrap();
-    println!("{addr}");
-}
+```toml
+[dependencies]
+dytallix-sdk = { git = "https://github.com/DytallixHQ/dytallix-sdk.git" }
 ```
 
 The SDK quickstart lives here:
@@ -173,9 +175,10 @@ non-success HTTP status and should be retried later.
 
 For a Rust client that talks to the canonical faucet endpoint:
 
-```bash
-cargo add dytallix-sdk --features network
-cargo add tokio --features macros,rt-multi-thread
+```toml
+[dependencies]
+dytallix-sdk = { git = "https://github.com/DytallixHQ/dytallix-sdk.git", features = ["network"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```
 
 ```rust
@@ -202,6 +205,9 @@ async fn main() {
 - Explorer: https://github.com/DytallixHQ/dytallix-explorer
 - Docs: https://github.com/DytallixHQ/dytallix-docs
 - Org profile: https://github.com/DytallixHQ
+
+For canonical public integration guidance, start with the docs repo:
+https://github.com/DytallixHQ/dytallix-docs
 
 ## Support
 
