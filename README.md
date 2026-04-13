@@ -2,11 +2,19 @@
 
 Public testnet faucet for Dytallix.
 
+Keypair, faucet, transfer, and basic contract lifecycle are available for experimentation on the public testnet. Staking, governance, and some advanced or operator paths are not yet production-complete.
+
 It funds a D-Addr with testnet `DGT` and `DRT` so developers can move from
 first keypair to first transaction without waiting on manual allocation.
 
 This repository currently documents the live public faucet service surface.
 It does not publish the deployed backend source for `dytallix.com/api/faucet`.
+The real backend source does exist in a separate production-host checkout, but
+it has not yet been published in this repo.
+
+The machine-readable public capability source of truth currently lives in this
+repository at `public-capabilities.json` and should stay aligned with the live
+faucet surface documented here.
 
 ## Repository Scope
 
@@ -14,11 +22,19 @@ This is a docs-only service-surface repository. It exists to describe the live
 public faucet behavior and request flow, not to publish the deployed backend
 source.
 
+It is not sufficient on its own to rebuild, audit, or redeploy the live faucet
+service. Until the deployed faucet backend source is published separately, this
+repository should be treated as an honest documentation boundary rather than a
+complete production-source repository.
+
+The local manifest is validated against the live status endpoint in CI so the
+README examples and limits do not drift silently.
+
 ## Live Service
 
 - Canonical base URL: `https://dytallix.com/api/faucet`
 - Status endpoint: `https://dytallix.com/api/faucet/status`
-- Verified against the live service on April 5, 2026
+- Verified against the live service on April 13, 2026
 
 The supported public faucet endpoint lives under `dytallix.com/api/faucet` on
 the main site.
@@ -29,8 +45,8 @@ The live faucet currently reports:
 
 - `10 DGT` per request
 - `100 DRT` per request
-- `60` minute cooldown window
-- `3` requests per hour
+- `60` second (`1` minute) cooldown window
+- `20` requests per hour
 
 These values come from `GET /status` and may change as the network evolves.
 
@@ -99,7 +115,7 @@ Returns live faucet availability and current request limits.
 curl https://dytallix.com/api/faucet/status
 ```
 
-Live response observed on April 5, 2026:
+Live response observed on April 13, 2026:
 
 ```json
 {
@@ -107,10 +123,10 @@ Live response observed on April 5, 2026:
   "limits": {
     "dgt": 10,
     "drt": 100,
-    "cooldownMinutes": 60,
-    "maxRequestsPerHour": 3
+    "cooldownMinutes": 1,
+    "maxRequestsPerHour": 20
   },
-  "activeUsers": 24
+  "activeUsers": 0
 }
 ```
 
@@ -122,7 +138,7 @@ Checks whether an address is currently allowed to request funds.
 curl https://dytallix.com/api/faucet/check/<D-ADDR>
 ```
 
-Live response observed on April 5, 2026:
+Live response observed on April 13, 2026:
 
 ```json
 {
@@ -171,6 +187,18 @@ Success response:
 If the faucet is rate-limited or temporarily unavailable, the request returns a
 non-success HTTP status and should be retried later.
 
+Rate-limit responses currently use HTTP `429` and include a retry window. A
+typical cooldown response looks like:
+
+```json
+{
+  "error": "IP cooldown active",
+  "message": "Please wait 28 seconds before making another faucet request",
+  "retryAfter": 28,
+  "cooldownMs": 60000
+}
+```
+
 ## SDK Integration
 
 For a Rust client that talks to the canonical faucet endpoint:
@@ -208,6 +236,10 @@ async fn main() {
 
 For canonical public integration guidance, start with the docs repo:
 https://github.com/DytallixHQ/dytallix-docs
+
+Do not infer from those links that explorer, docs, or website frontend source
+publication has been validated here. That wider publication audit still has to
+be completed repo by repo.
 
 ## Support
 
