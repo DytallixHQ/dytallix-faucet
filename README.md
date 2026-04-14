@@ -1,247 +1,83 @@
 # Dytallix Faucet
 
-Public testnet faucet for Dytallix.
+Public faucet backend source for the Dytallix testnet.
+
+This repository now contains the Node.js backend that serves the live token
+distribution flow behind `https://dytallix.com/api/faucet`.
 
 Keypair, faucet, transfer, and basic contract lifecycle are available for experimentation on the public testnet. Staking, governance, and some advanced or operator paths are not yet production-complete.
 
-It funds a D-Addr with testnet `DGT` and `DRT` so developers can move from
-first keypair to first transaction without waiting on manual allocation.
+## Repository Role
 
-This repository currently documents the live public faucet service surface.
-It does not publish the deployed backend source for `dytallix.com/api/faucet`.
-The real backend source does exist in a separate production-host checkout, but
-it has not yet been published in this repo.
+- Role: canonical public faucet backend source
+- Backend entrypoint: `src/server.js`
+- Runtime controller: `src/controllers/faucetController-dual.js`
+- Compatibility edge config: `deploy/nginx/faucet-compat.conf`
 
-The machine-readable public capability source of truth currently lives in this
-repository at `public-capabilities.json` and should stay aligned with the live
-faucet surface documented here.
+## Public Surface
 
-## Repository Scope
+The live public faucet currently exposes:
 
-This is a docs-only service-surface repository. It exists to describe the live
-public faucet behavior and request flow, not to publish the deployed backend
-source.
+- `POST /api/faucet`
+- `POST /api/faucet/request`
+- `GET /api/faucet/status`
+- `GET /api/faucet/check/:address`
 
-It is not sufficient on its own to rebuild, audit, or redeploy the live faucet
-service. Until the deployed faucet backend source is published separately, this
-repository should be treated as an honest documentation boundary rather than a
-complete production-source repository.
+The backend service in this repository provides the token send flow and internal
+status routes. The public `GET /api/faucet/status` and
+`GET /api/faucet/check/:address` compatibility endpoints are currently provided
+at the nginx edge, and the matching route configuration is included in this
+repo under `deploy/nginx/faucet-compat.conf`.
 
-The local manifest is validated against the live status endpoint in CI so the
-README examples and limits do not drift silently.
+## Current Live Policy
 
-## Live Service
-
-- Canonical base URL: `https://dytallix.com/api/faucet`
-- Status endpoint: `https://dytallix.com/api/faucet/status`
-- Verified against the live service on April 13, 2026
-
-The supported public faucet endpoint lives under `dytallix.com/api/faucet` on
-the main site.
-
-## Current Testnet Limits
-
-The live faucet currently reports:
-
-- `10 DGT` per request
-- `100 DRT` per request
-- `60` second (`1` minute) cooldown window
+- `10 DGT` per successful request
+- `100 DRT` per successful request
+- `60` second cooldown
 - `20` requests per hour
 
-These values come from `GET /status` and may change as the network evolves.
+## Quick Start
 
-## Fast Path
-
-### 1. Generate a D-Addr
-
-If you need a fresh D-Addr first:
-
-Add the SDK from Git because the crate is not currently published on crates.io:
-
-```toml
-[dependencies]
-dytallix-sdk = { git = "https://github.com/DytallixHQ/dytallix-sdk.git" }
-```
-
-The SDK quickstart lives here:
-
-- SDK: https://github.com/DytallixHQ/dytallix-sdk
-
-### 2. Request Faucet Funds With `curl`
+Install dependencies:
 
 ```bash
-curl -X POST https://dytallix.com/api/faucet/request \
-  -H 'content-type: application/json' \
-  -d '{
-    "address": "<D-ADDR>",
-    "dgt_amount": 10,
-    "drt_amount": 100
-  }'
+npm ci
 ```
 
-Example live response:
-
-```json
-{
-  "success": true,
-  "funded": {
-    "dgt": 10,
-    "drt": 100
-  },
-  "message": "Tokens sent successfully"
-}
-```
-
-### 3. Request Faucet Funds With the CLI
+Prepare a local environment file:
 
 ```bash
-cargo install --git https://github.com/DytallixHQ/dytallix-sdk.git dytallix-cli --bin dytallix
-dytallix faucet <D-ADDR>
+cp .env.example .env
 ```
 
-If you already initialized a local keystore, you can fund the active address:
+Start the backend:
 
 ```bash
-dytallix faucet
+npm start
 ```
 
-## API
-
-### `GET /status`
-
-Returns live faucet availability and current request limits.
+## Local Checks
 
 ```bash
-curl https://dytallix.com/api/faucet/status
+curl http://127.0.0.1:3001/health
+curl http://127.0.0.1:3001/api/info
+curl http://127.0.0.1:3001/api/status
 ```
 
-Live response observed on April 13, 2026:
+## Configuration
 
-```json
-{
-  "status": "operational",
-  "limits": {
-    "dgt": 10,
-    "drt": 100,
-    "cooldownMinutes": 1,
-    "maxRequestsPerHour": 20
-  },
-  "activeUsers": 0
-}
-```
+The repo ships `.env.example` with the live public-policy defaults:
 
-### `GET /check/:address`
+- `CHAIN_ID=dyt-local-1`
+- `RPC_ENDPOINT=http://127.0.0.1:3030`
+- `DGT_FAUCET_AMOUNT=10000000udgt`
+- `DRT_FAUCET_AMOUNT=100000000udrt`
+- `RATE_LIMIT_MAX_REQUESTS=20`
+- `IP_COOLDOWN_MS=60000`
 
-Checks whether an address is currently allowed to request funds.
+## Notes
 
-```bash
-curl https://dytallix.com/api/faucet/check/<D-ADDR>
-```
-
-Live response observed on April 13, 2026:
-
-```json
-{
-  "address": "dytallix15krmltc0pq929v3upr9qtaf9eevk22fhf8gspggp7gjlwdcyuhvq4909fd",
-  "allowed": true
-}
-```
-
-### `POST /request`
-
-Requests testnet `DGT` and `DRT` for a D-Addr.
-
-```bash
-curl -X POST https://dytallix.com/api/faucet/request \
-  -H 'content-type: application/json' \
-  -d '{
-    "address": "<D-ADDR>",
-    "dgt_amount": 10,
-    "drt_amount": 100
-  }'
-```
-
-Request body:
-
-```json
-{
-  "address": "<D-ADDR>",
-  "dgt_amount": 10,
-  "drt_amount": 100
-}
-```
-
-Success response:
-
-```json
-{
-  "success": true,
-  "funded": {
-    "dgt": 10,
-    "drt": 100
-  },
-  "message": "Tokens sent successfully"
-}
-```
-
-If the faucet is rate-limited or temporarily unavailable, the request returns a
-non-success HTTP status and should be retried later.
-
-Rate-limit responses currently use HTTP `429` and include a retry window. A
-typical cooldown response looks like:
-
-```json
-{
-  "error": "IP cooldown active",
-  "message": "Please wait 28 seconds before making another faucet request",
-  "retryAfter": 28,
-  "cooldownMs": 60000
-}
-```
-
-## SDK Integration
-
-For a Rust client that talks to the canonical faucet endpoint:
-
-```toml
-[dependencies]
-dytallix-sdk = { git = "https://github.com/DytallixHQ/dytallix-sdk.git", features = ["network"] }
-tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
-```
-
-```rust
-use dytallix_sdk::{DAddr, DytallixKeypair};
-use dytallix_sdk::faucet::FaucetClient;
-
-#[tokio::main]
-async fn main() {
-    let keypair = DytallixKeypair::generate();
-    let addr = DAddr::from_public_key(keypair.public_key()).unwrap();
-
-    let faucet = FaucetClient::testnet();
-    let balance = faucet.fund(&addr).await.unwrap();
-
-    println!("address: {addr}");
-    println!("funded: {} DGT / {} DRT", balance.dgt, balance.drt);
-}
-```
-
-## Related Repositories
-
-- SDK: https://github.com/DytallixHQ/dytallix-sdk
-- Node: https://github.com/DytallixHQ/dytallix-node
-- Explorer: https://github.com/DytallixHQ/dytallix-explorer
-- Docs: https://github.com/DytallixHQ/dytallix-docs
-- Org profile: https://github.com/DytallixHQ
-
-For canonical public integration guidance, start with the docs repo:
-https://github.com/DytallixHQ/dytallix-docs
-
-Do not infer from those links that explorer, docs, or website frontend source
-publication has been validated here. That wider publication audit still has to
-be completed repo by repo.
-
-## Support
-
-- Website: https://dytallix.com
-- Discord: https://discord.gg/eyVvu5kmPG
+- This repository replaces the earlier docs-only faucet boundary for the
+  backend source itself.
+- The live site still fronts the backend with nginx compatibility routes, so
+  backend code and edge routing both matter for full public-surface parity.
