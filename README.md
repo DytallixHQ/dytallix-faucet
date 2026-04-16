@@ -62,6 +62,7 @@ npm start
 curl http://127.0.0.1:3001/health
 curl http://127.0.0.1:3001/api/info
 curl http://127.0.0.1:3001/api/status
+npm test
 ```
 
 ## Configuration
@@ -81,3 +82,8 @@ The repo ships `.env.example` with the live public-policy defaults:
   backend source itself.
 - The live site still fronts the backend with nginx compatibility routes, so
   backend code and edge routing both matter for full public-surface parity.
+
+## Security Reporting
+
+Do not report vulnerabilities in public issues. Use GitHub Security Advisories
+for this repository when available, or email hello@dytallix.com.
