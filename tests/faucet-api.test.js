@@ -1,5 +1,8 @@
+const os = require('os');
+const path = require('path');
+
 process.env.NODE_ENV = 'test';
-process.env.LOG_FILE = 'logs/test.log';
+process.env.LOG_FILE = path.join(os.tmpdir(), 'dytallix-faucet-test.log');
 process.env.RPC_ENDPOINT = 'http://127.0.0.1:3030';
 
 const request = require('supertest');
@@ -11,7 +14,7 @@ const app = require('../src/server');
 
 describe('dytallix-faucet API', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    jest.resetAllMocks();
   });
 
   test('GET /health returns service health', async () => {
