@@ -5,6 +5,9 @@ const rateLimit = require('express-rate-limit');
 const winston = require('winston');
 const dotenv = require('dotenv');
 
+// Load environment variables before reading feature flags.
+dotenv.config();
+
 const faucetController = require('./controllers/faucetController-dual');
 const { errorHandler, notFound } = require('./middleware/errorHandler');
 const { validateRequest } = require('./middleware/validation');
@@ -60,9 +63,6 @@ if (process.env.ENABLE_METRICS === 'true') {
     }
   });
 }
-
-// Load environment variables
-dotenv.config();
 
 const app = express();
 
@@ -204,26 +204,36 @@ app.post("/api/faucet/request",
 app.use(notFound);
 app.use(errorHandler);
 
-// Start server
-app.listen(PORT, () => {
-  logger.info(`Dytallix Faucet API server running on port ${PORT}`, {
-    port: PORT,
-    environment: process.env.NODE_ENV || 'development',
-    chainId: process.env.CHAIN_ID || 'dyt-local-1'
-  });
-});
+let mainServer;
+let metricsServer;
 
-// Start metrics server if enabled
-if (metricsEnabled && metricsApp) {
-  const metricsPort = process.env.METRICS_PORT || 9101;
-  metricsApp.listen(metricsPort, () => {
-    logger.info(`Faucet metrics server running on port ${metricsPort}`);
-  });
+function startServers() {
+  if (!mainServer) {
+    mainServer = app.listen(PORT, () => {
+      logger.info(`Dytallix Faucet API server running on port ${PORT}`, {
+        port: PORT,
+        environment: process.env.NODE_ENV || 'development',
+        chainId: process.env.CHAIN_ID || 'dyt-local-1'
+      });
+    });
+  }
+
+  if (metricsEnabled && metricsApp && !metricsServer) {
+    const metricsPort = process.env.METRICS_PORT || 9101;
+    metricsServer = metricsApp.listen(metricsPort, () => {
+      logger.info(`Faucet metrics server running on port ${metricsPort}`);
+    });
+  }
+
+  return { mainServer, metricsServer };
 }
 
-// Export metrics for use in controllers
+module.exports = app;
+module.exports.startServers = startServers;
 if (metricsEnabled) {
   module.exports.metrics = faucetMetrics;
 }
 
-module.exports = app;
+if (require.main === module) {
+  startServers();
+}

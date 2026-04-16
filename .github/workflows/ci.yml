@@ -18,3 +18,4 @@ jobs:
       - run: npm ci
       - run: node --check src/server.js
       - run: node --check src/controllers/faucetController-dual.js
+      - run: npm test -- --runInBand
