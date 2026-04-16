@@ -1,4 +1,4 @@
-# Contributing To dytallix-faucet
+# Contributing to dytallix-faucet
 
 This repository is the public backend source for the live Dytallix faucet
 flow.
