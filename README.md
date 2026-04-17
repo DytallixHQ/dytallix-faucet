@@ -36,6 +36,11 @@ repo under `deploy/nginx/faucet-compat.conf`.
 - `60` second cooldown
 - `20` requests per hour
 
+## Prerequisites
+
+Use a current Node.js runtime with `npm` available. The local setup and test
+commands in this repository assume a standard Node.js development environment.
+
 ## Quick Start
 
 Install dependencies:
