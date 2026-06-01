@@ -77,6 +77,26 @@ describe('dytallix-faucet API', () => {
     });
   });
 
+  test('GET /api/balance rejects malformed addresses without hitting the node', async () => {
+    const response = await request(app).get('/api/balance/not-a-valid-address');
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe('Invalid address format');
+    expect(axios.get).not.toHaveBeenCalled();
+  });
+
+  test('GET /api/balance proxies the node for valid addresses', async () => {
+    axios.get.mockResolvedValue({ data: { balances: {} } });
+    const address = 'dytallix1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq';
+
+    const response = await request(app).get(`/api/balance/${address}`);
+
+    expect(response.status).toBe(200);
+    expect(axios.get).toHaveBeenCalledWith(
+      `http://127.0.0.1:3030/balance/${address}`
+    );
+  });
+
   test('GET /api/status reports degraded when the node is unavailable', async () => {
     axios.get.mockRejectedValue(new Error('node offline'));
 
