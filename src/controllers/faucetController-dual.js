@@ -184,7 +184,14 @@ class DualTokenFaucetController {
   async getBalance(req, res) {
     try {
       const { address } = req.params;
-      const response = await axios.get(`${this.rpcEndpoint}/balance/${address}`);
+      // Validate before interpolating into the RPC URL so a caller cannot inject
+      // path segments (e.g. "../") and reach unintended backend endpoints.
+      if (!this.isValidAddress(address)) {
+        return res.status(400).json({ error: "Invalid address format" });
+      }
+      const response = await axios.get(
+        `${this.rpcEndpoint}/balance/${encodeURIComponent(address)}`
+      );
       res.json(response.data);
     } catch (error) {
       res.status(500).json({ error: error.message });
