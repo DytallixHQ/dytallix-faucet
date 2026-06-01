@@ -1,6 +1,10 @@
 const winston = require("winston");
 const axios = require("axios");
+const { execFile } = require("child_process");
+const { promisify } = require("util");
 const { logFaucetEvent } = require("../utils/artifactLogger");
+
+const execFileAsync = promisify(execFile);
 
 const logger = winston.createLogger({
   level: process.env.LOG_LEVEL || "info",
@@ -16,6 +20,10 @@ class DualTokenFaucetController {
     this.rpcEndpoint = process.env.RPC_ENDPOINT || "http://127.0.0.1:3030";
     this.chainId = process.env.CHAIN_ID || "dyt-local-1";
     this.faucetAddress = process.env.FAUCET_ADDRESS || "dyt1faucet";
+    // Faucet dispenses DRT (the fee/reward token) via signed transfers from a
+    // funded treasury wallet, using the dytallix CLI. No admin mint endpoint.
+    this.faucetWallet = process.env.FAUCET_WALLET || "faucet-hot";
+    this.dytallixBin = process.env.DYTALLIX_BIN || "dytallix";
 
     // Dual token system configuration
     this.tokenConfig = {
@@ -61,66 +69,79 @@ class DualTokenFaucetController {
         });
       }
 
-      // Determine amounts to send
-      const udgt = tokenType === "DRT" ? 0 : parseInt(this.tokenConfig.DGT.amount);
-      const udrt = tokenType === "DGT" ? 0 : parseInt(this.tokenConfig.DRT.amount);
-
-      // Call blockchain dev/faucet endpoint
-      const response = await axios.post(`${this.rpcEndpoint}/dev/faucet`, {
-        address,
-        udgt,
-        udrt,
-      });
-
-      if (!response.data.success) {
-        throw new Error("Blockchain faucet returned unsuccessful response");
-      }
-
-      logger.info("Blockchain faucet credited tokens", {
-        address,
-        credited: response.data.credited,
-      });
-
-      // Build response
-      const transactions = [];
-      const totalSent = {};
-
-      if (udgt > 0) {
-        transactions.push({
-          token: "DGT",
-          amount: `${udgt}udgt`,
-          amountFormatted: `${udgt / 1000000} DGT`,
-          txHash: this.generateTxHash(),
-          denom: "udgt",
-          purpose: "Governance voting and protocol decisions",
+      // DGT is a fixed-supply (1B) governance token allocated at genesis — it is
+      // NOT dispensed by the faucet. The faucet dispenses DRT, the reward/fee
+      // token users need to pay transaction fees.
+      if (tokenType === "DGT") {
+        return res.status(400).json({
+          error: "DGT not available from faucet",
+          message:
+            "DGT is a fixed-supply governance token distributed at genesis, not via the faucet. Request DRT (the fee/reward token) instead.",
         });
-        totalSent.DGT = `${udgt}udgt`;
       }
 
-      if (udrt > 0) {
-        transactions.push({
+      const udrt = parseInt(this.tokenConfig.DRT.amount);
+      const drtWhole = Math.floor(udrt / 1000000);
+
+      // Dispense by signing a normal transfer from the faucet treasury wallet via
+      // the dytallix CLI (no privileged mint endpoint). DYTALLIX_ENDPOINT points
+      // the CLI at the local node; --from selects the faucet wallet.
+      let cliOut = "";
+      try {
+        const result = await execFileAsync(
+          this.dytallixBin,
+          ["send", address, String(drtWhole), "--token", "drt", "--from", this.faucetWallet],
+          {
+            env: { ...process.env, DYTALLIX_ENDPOINT: this.rpcEndpoint },
+            timeout: 30000,
+          }
+        );
+        cliOut = `${result.stdout || ""}${result.stderr || ""}`;
+      } catch (cliErr) {
+        const detail =
+          `${cliErr.stdout || ""}${cliErr.stderr || ""}`.trim() || cliErr.message;
+        logger.error("Faucet DRT transfer failed", { address, detail });
+        return res.status(502).json({
+          error: "Faucet transfer failed",
+          message: "Unable to dispense DRT right now. Please try again later.",
+        });
+      }
+
+      // Best-effort extraction of the transaction hash from CLI output.
+      const hashMatch = cliOut.match(/(0x)?[0-9a-f]{32,}/i);
+      const txHash = hashMatch ? hashMatch[0] : null;
+
+      logger.info("Faucet dispensed DRT via signed transfer", { address, txHash });
+
+      const transactions = [
+        {
           token: "DRT",
           amount: `${udrt}udrt`,
-          amountFormatted: `${udrt / 1000000} DRT`,
-          txHash: this.generateTxHash(),
+          amountFormatted: `${drtWhole} DRT`,
+          txHash,
           denom: "udrt",
           purpose: "Rewards, incentives, and transaction fees",
-        });
-        totalSent.DRT = `${udrt}udrt`;
-      }
+        },
+      ];
+      const totalSent = { DRT: `${udrt}udrt` };
 
-      logFaucetEvent("SUCCESS_FUND", { address, tokenType, totalSent, transactions });
+      logFaucetEvent("SUCCESS_FUND", {
+        address,
+        tokenType: "DRT",
+        totalSent,
+        transactions,
+      });
 
       res.status(200).json({
         success: true,
-        message: `Successfully sent ${tokenType} tokens to ${address}`,
+        message: `Successfully sent DRT to ${address}`,
         recipient: address,
-        tokenType,
+        tokenType: "DRT",
         transactions,
         totalSent,
-        blockchainResponse: response.data.credited,
+        txHash,
         timestamp: new Date().toISOString(),
-        note: this.getTokenTypeNote(tokenType),
+        note: this.getTokenTypeNote("DRT"),
       });
     } catch (error) {
       logger.error("Error in dual token distribution", {

@@ -7,14 +7,23 @@ process.env.RPC_ENDPOINT = 'http://127.0.0.1:3030';
 
 const request = require('supertest');
 const axios = require('axios');
+const { execFile } = require('child_process');
 
 jest.mock('axios');
+jest.mock('child_process', () => ({ execFile: jest.fn() }));
 
 const app = require('../src/server');
 
 describe('dytallix-faucet API', () => {
   beforeEach(() => {
     jest.resetAllMocks();
+    // Mock the dytallix CLI: succeed and emit a fake tx hash on stdout.
+    execFile.mockImplementation((file, args, opts, cb) =>
+      cb(null, {
+        stdout: `Transaction submitted 0x${'a'.repeat(64)}\nTransaction confirmed`,
+        stderr: '',
+      })
+    );
   });
 
   test('GET /health returns service health', async () => {
@@ -45,36 +54,41 @@ describe('dytallix-faucet API', () => {
     expect(response.body.error).toBe('Validation failed');
   });
 
-  test('POST /api/faucet/request funds both tokens for valid requests', async () => {
-    axios.post.mockResolvedValue({
-      data: {
-        success: true,
-        credited: {
-          udgt: 10000000,
-          udrt: 100000000,
-        },
-      },
-    });
-
+  test('POST /api/faucet/request dispenses DRT via a signed transfer', async () => {
+    const addr = 'dytallix1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq';
     const response = await request(app)
       .post('/api/faucet/request')
       .set('User-Agent', 'jest')
       .set('X-Forwarded-For', '203.0.113.2')
-      .send({
-        address: 'dytallix1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq',
-        dgt_amount: 10,
-        drt_amount: 100,
-      });
+      .send({ address: addr, tokenType: 'DRT' });
 
     expect(response.status).toBe(200);
     expect(response.body.success).toBe(true);
-    expect(response.body.tokenType).toBe('both');
-    expect(response.body.transactions).toHaveLength(2);
-    expect(axios.post).toHaveBeenCalledWith('http://127.0.0.1:3030/dev/faucet', {
-      address: 'dytallix1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq',
-      udgt: 10000000,
-      udrt: 100000000,
-    });
+    expect(response.body.tokenType).toBe('DRT');
+    expect(response.body.transactions).toHaveLength(1);
+    // Dispensed via a signed CLI transfer, not the admin mint endpoint.
+    expect(execFile).toHaveBeenCalled();
+    const [bin, args] = execFile.mock.calls[0];
+    expect(bin).toBe('dytallix');
+    expect(args).toEqual(
+      expect.arrayContaining(['send', addr, '--token', 'drt', '--from', 'faucet-hot'])
+    );
+    expect(axios.post).not.toHaveBeenCalled();
+  });
+
+  test('POST /api/faucet/request rejects DGT (genesis-only token)', async () => {
+    const response = await request(app)
+      .post('/api/faucet/request')
+      .set('User-Agent', 'jest')
+      .set('X-Forwarded-For', '203.0.113.9')
+      .send({
+        address: 'dytallix1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq',
+        tokenType: 'DGT',
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe('DGT not available from faucet');
+    expect(execFile).not.toHaveBeenCalled();
   });
 
   test('GET /api/balance rejects malformed addresses without hitting the node', async () => {
